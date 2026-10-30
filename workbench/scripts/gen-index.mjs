@@ -10,7 +10,7 @@
 import {
   existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from "node:fs";
-import { dirname, extname, join, relative, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const wb = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,7 +28,8 @@ const ensureLink = (linkPath, target) => {
     else return true; // 真实文件/目录（成片工程链接进来的）：不动
   } catch { /* 不存在 */ }
   mkdirSync(dirname(linkPath), { recursive: true });
-  symlinkSync(target, linkPath);
+  // Windows without Developer Mode cannot create symlinks: junction (target auto-resolved to absolute)
+  symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : undefined);
   return true;
 };
 const publicDir = join(wb, "public");
@@ -38,7 +39,12 @@ ensureLink(join(publicDir, "cardpreviews"), "../../gallery/media");
 // Never remove a user-owned directory or a link to another collection.
 try {
   const oldSfx = join(publicDir, "sfxlib");
-  if (lstatSync(oldSfx).isSymbolicLink() && readlinkSync(oldSfx) === "../../assets/audio/sfx") unlinkSync(oldSfx);
+  // compare resolved targets: Windows junctions store an absolute (possibly \\?\-prefixed) path
+  const target = (p) => {
+    const r = resolve(publicDir, p.replace(/^\\\\\?\\/, "")).replace(/[\\/]+$/, "");
+    return process.platform === "win32" ? r.toLowerCase() : r;
+  };
+  if (lstatSync(oldSfx).isSymbolicLink() && target(readlinkSync(oldSfx)) === target("../../assets/audio/sfx")) unlinkSync(oldSfx);
 } catch (error) { if (error.code !== "ENOENT") throw error; }
 ensureLink(join(publicDir, "bgmlib"), "../../assets/audio/bgm");
 // 独立命名空间，绝不往用户链接的 public/textures 写入旧截图。
@@ -57,7 +63,14 @@ ensureLink(join(publicDir, "legacy-textures"), "../../demos/_legacy/_textures");
 //   → 文件内未导出的 `const *DUR*|TOTAL|*END = N` → 缺省 150f（clip 可再裁剪/定格，motion-lab 系卡按 clip 长度归一化）
 const DUR_PAT = /export const (\w+_DURATION|\w+_DUR)\s*=/;
 const MATERIAL_REQUIRED = new Set(["ClipCardLooping"]); // 需要真实 mp4 素材，无法自动生成
-const demosDir = join(wb, "demosrc");
+// demosrc is a committed relative symlink; checkouts without symlink support (Windows core.symlinks=false)
+// get a plain text file instead → create an untracked junction `.demosrc` (resolution then still happens under
+// workbench/, so bare imports find workbench/node_modules) and fall back to the real ../demos directory last.
+const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+if (!isDir(join(wb, "demosrc")) && process.platform === "win32" && !isDir(join(wb, ".demosrc"))) {
+  try { symlinkSync(join(repo, "demos"), join(wb, ".demosrc"), "junction"); } catch { /* fall through */ }
+}
+const demosDir = [join(wb, "demosrc"), join(wb, ".demosrc"), join(repo, "demos")].find(isDir);
 const framesIn = (text) => { const m = text && /(\d{2,4})\s*f\b/.exec(text); return m ? Number(m[1]) : 0; };
 const cardMdFrames = (category, slug) => {
   try { const md = readFileSync(join(repo, "references/shots", category, `${slug}.md`), "utf8"); const m = /^时长:\s*(.*)$/m.exec(md); return framesIn(m?.[1]); } catch { return 0; }

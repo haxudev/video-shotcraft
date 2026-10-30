@@ -7,6 +7,8 @@ import test from "node:test";
 import ts from "typescript";
 
 const wb = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// same @demos fallback as vite/remotion configs: demosrc symlink, Windows junction .demosrc, else ../demos
+const demos = ["demosrc", ".demosrc"].map(d => path.join(wb, d)).find(p => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) ?? path.join(wb, "../demos");
 const manifest = JSON.parse(fs.readFileSync(path.join(wb, "../demos/_legacy/manifest.json"), "utf8"));
 const oldProject = {
   name: "Saved before the October library update", fps: 30, width: 1920, height: 1080,
@@ -36,7 +38,7 @@ const load = filename => {
   }
   const require = createRequire(filename);
   const resolve = spec => {
-    if (spec.startsWith("@demos/")) return path.join(wb, "demosrc", spec.slice(7));
+    if (spec.startsWith("@demos/")) return path.join(demos, spec.slice(7));
     if (spec.startsWith("@proj/")) return path.join(wb, "proj-stub", spec.slice(6));
     if (spec.startsWith(".")) return path.resolve(path.dirname(filename), spec);
     return null;
@@ -116,7 +118,7 @@ test("current definitions take precedence over compatibility IDs and duplicates"
 });
 
 test("snapshot imports resolve locally and legacy textures use an isolated namespace", () => {
-  const legacyDir = path.join(wb, "demosrc/_legacy");
+  const legacyDir = path.join(demos, "_legacy");
   for (const card of manifest.cards) {
     const file = path.join(legacyDir, card.path + ".tsx");
     const src = fs.readFileSync(file, "utf8");

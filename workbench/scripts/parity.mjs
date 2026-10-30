@@ -11,11 +11,14 @@
 import { bundle } from "@remotion/bundler";
 import { renderStill, selectComposition } from "@remotion/renderer";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, cpSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, cpSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const wb = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// demosrc is a committed symlink; without symlink support (Windows core.symlinks=false) it is a plain file →
+// use the junction .demosrc that gen-index.mjs creates (keeps resolution under workbench/), else ../demos
+const demos = [join(wb, "demosrc"), join(wb, ".demosrc")].find((p) => { try { return statSync(p).isDirectory(); } catch { return false; } }) ?? join(wb, "..", "demos");
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const FRAMES = opt("frames", "150,240,470,1000").split(",").map(Number);
@@ -60,7 +63,7 @@ const serveUrl = await bundle({
     resolve: {
       ...c.resolve,
       symlinks: false,
-      alias: { ...(c.resolve?.alias ?? {}), "@proj": join(wb, "proj"), "@demos": join(wb, "demosrc") },
+      alias: { ...(c.resolve?.alias ?? {}), "@proj": join(wb, "proj"), "@demos": demos },
     },
   }),
 });

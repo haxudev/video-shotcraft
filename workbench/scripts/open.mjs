@@ -14,7 +14,7 @@
 // server（如手动 npm run dev）占着时直接报错，不会假装"刷新即可"。
 import { spawn, spawnSync } from "node:child_process";
 import {
-  existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,14 @@ const positional = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[
 
 const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
 const rmLink = (p) => { if (isLink(p)) unlinkSync(p); };
+// Windows without Developer Mode cannot create symlinks (EPERM): link directories as junctions
+// (no privilege needed; Node reports them as symbolic links, so isLink/rmLink still work) and
+// files as hard links.
+const linkEntry = (target, path) => {
+  if (process.platform !== "win32") return symlinkSync(target, path);
+  if (statSync(target).isDirectory()) return symlinkSync(target, path, "junction");
+  return linkSync(target, path);
+};
 const log = (s) => console.log(`[workbench] ${s}`);
 const die = (s, code = 1) => { console.error(`[workbench] ${s}`); process.exit(code); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -51,7 +59,7 @@ if (!relink) {
 
   // —— 2. 链接 src → proj，public/* → public/* ——
   rmLink(projLink);
-  symlinkSync(srcDir, projLink);
+  linkEntry(srcDir, projLink);
   const pub = join(wb, "public");
   mkdirSync(pub, { recursive: true });
   // 清掉上一部片留下的链接（只删符号链接和我们建的 textures/ 兜底目录，不碰真实文件）
@@ -67,7 +75,7 @@ if (!relink) {
   if (existsSync(publicSrc)) {
     for (const e of readdirSync(publicSrc)) {
       if (e.startsWith(".")) continue;
-      symlinkSync(join(publicSrc, e), join(pub, e));
+      linkEntry(join(publicSrc, e), join(pub, e));
       n++;
     }
   }
@@ -79,7 +87,7 @@ if (!relink) {
 // —— 3. 依赖与索引 ——
 if (!existsSync(join(wb, "node_modules"))) {
   log("首次使用，安装依赖…");
-  const r = spawnSync("npm", ["install", "--ignore-scripts"], { cwd: wb, stdio: "inherit" });
+  const r = spawnSync("npm", ["install", "--ignore-scripts"], { cwd: wb, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 {

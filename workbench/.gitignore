@@ -16,6 +16,8 @@ src/projMeta.ts
 # 机器本地符号链接：指向外部成片工程的 src/（绝对路径，不进库）。
 # 链接方法见 README「接入成片工程」；未链接时自动使用 proj-stub 降级。
 proj
+# Windows 无符号链接权限时 gen-index.mjs 建的 demos 目录联接（替代 demosrc）
+.demosrc
 
 # public/ 全部由 scripts/open.mjs / gen-index.mjs 按本机链接生成
 public/*

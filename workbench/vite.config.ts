@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, cpSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -13,6 +13,15 @@ import react from "@vitejs/plugin-react";
 const root = fileURLToPath(new URL(".", import.meta.url));
 // 工程链接了但没写 src/workbench.ts 清单时也回退到 stub（工作台只 import @proj/workbench 这一个模块）
 const proj = existsSync(path.join(root, "proj", "workbench.ts")) ? "proj" : "proj-stub";
+// demosrc is a committed symlink; without symlink support (Windows core.symlinks=false) it is a plain file →
+// use the junction .demosrc that gen-index.mjs creates (keeps resolution under workbench/), else ../demos
+const demos = (() => {
+  for (const d of ["demosrc", ".demosrc"]) {
+    const p = path.join(root, d);
+    try { if (statSync(p).isDirectory()) return p; } catch { /* missing */ }
+  }
+  return path.join(root, "..", "demos");
+})();
 
 /** 导出成片：dev server 内起 Remotion CLI 渲染，
  *  前端 POST /api/export 提交工程 JSON，轮询 GET /api/export/:id 取进度。 */
@@ -185,7 +194,7 @@ export default defineConfig({
   server: { port: 5198, strictPort: true },
   resolve: {
     preserveSymlinks: true,
-    alias: { "@proj": path.join(root, proj), "@demos": path.join(root, "demosrc") },
+    alias: { "@proj": path.join(root, proj), "@demos": demos },
   },
   // 外部工程 / demo 源码经符号链接进来，依赖预构建要认得它们的裸导入
   optimizeDeps: { include: ["react", "react-dom", "remotion", "@remotion/motion-blur"] },
